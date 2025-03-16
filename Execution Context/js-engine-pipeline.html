@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>JavaScript Engine Pipeline</title>
+    <style>
+      :root {
+        --primary-color: #4285f4;
+        --secondary-color: #34a853;
+        --tertiary-color: #fbbc05;
+        --quaternary-color: #ea4335;
+        --light-bg: #f9f9f9;
+        --dark-bg: #282c34;
+        --text-color: #333;
+        --light-text: #f5f5f5;
+        --border-color: #ddd;
+        --highlight-color: #ff5252;
+        --success-color: #4caf50;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        line-height: 1.6;
+        color: var(--text-color);
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: var(--light-bg);
+      }
+
+      h1,
+      h2,
+      h3 {
+        text-align: center;
+        margin-bottom: 1rem;
+      }
+
+      .engine-container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        margin-bottom: 30px;
+      }
+
+      .stage {
+        border: 2px solid var(--border-color);
+        border-radius: 8px;
+        padding: 20px;
+        background-color: white;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .stage.active {
+        box-shadow: 0 0 0 2px var(--primary-color);
+      }
+
+      .stage.completed {
+        background-color: #e8f5e9;
+      }
+
+      .stage.error {
+        background-color: #ffebee;
+      }
+
+      .stage-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .stage-title {
+        font-weight: bold;
+        font-size: 1.2rem;
+        color: var(--primary-color);
+        margin: 0;
+      }
+
+      .stage-status {
+        font-size: 0.9rem;
+        padding: 4px 8px;
+        border-radius: 4px;
+        background-color: #e0e0e0;
+      }
+
+      .status-waiting {
+        background-color: #e0e0e0;
+      }
+
+      .status-in-progress {
+        background-color: var(--tertiary-color);
+        color: var(--text-color);
+      }
+
+      .status-completed {
+        background-color: var(--secondary-color);
+        color: white;
+      }
+
+      .status-error {
+        background-color: var(--quaternary-color);
+        color: white;
+      }
+
+      .code-container {
+        background-color: var(--dark-bg);
+        border-radius: 6px;
+        padding: 15px;
+        margin-bottom: 20px;
+        color: var(--light-text);
+        font-family: "Consolas", "Courier New", monospace;
+        font-size: 16px;
+        line-height: 1.5;
+        overflow-x: auto;
+      }
+
+      .controls {
+        display: flex;
+        justify-content: center;
+        gap: 10px;
+        margin: 20px 0;
+      }
+
+      button {
+        padding: 10px 20px;
+        background-color: var(--primary-color);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+        transition: background-color 0.2s;
+      }
+
+      button:hover {
+        background-color: #3367d6;
+      }
+
+      button:disabled {
+        background-color: #cccccc;
+        cursor: not-allowed;
+      }
+
+      .token-container,
+      .bytecode-container,
+      .machine-code-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 10px 0;
+        min-height: 60px;
+      }
+
+      .token {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-family: "Consolas", "Courier New", monospace;
+        font-size: 14px;
+        animation: fadeIn 0.5s;
+      }
+
+      .keyword {
+        background-color: #c792ea;
+        color: white;
+      }
+      .identifier {
+        background-color: #82aaff;
+        color: white;
+      }
+      .operator {
+        background-color: #89ddff;
+        color: white;
+      }
+      .string {
+        background-color: #c3e88d;
+        color: white;
+      }
+      .punctuation {
+        background-color: #f78c6c;
+        color: white;
+      }
+      .error {
+        background-color: #ff5370;
+        color: white;
+      }
+
+      .ast-container {
+        height: 400px;
+        position: relative;
+        margin: 10px 0;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background-color: white;
+      }
+
+      .node {
+        position: absolute;
+        border: 2px solid #333;
+        border-radius: 6px;
+        padding: 8px;
+        background-color: white;
+        font-family: "Consolas", "Courier New", monospace;
+        text-align: center;
+        transition: all 0.5s ease;
+        opacity: 0;
+        font-size: 14px;
+      }
+
+      .edge {
+        position: absolute;
+        background-color: #333;
+        height: 2px;
+        transform-origin: 0 0;
+        opacity: 0;
+        transition: opacity 0.5s ease;
+      }
+
+      .bytecode-line,
+      .machine-code-line {
+        font-family: "Consolas", "Courier New", monospace;
+        background-color: #444;
+        color: #f8f8f2;
+        padding: 6px 10px;
+        border-radius: 4px;
+        margin: 5px 0;
+        width: 100%;
+        animation: slideIn 0.5s;
+        opacity: 0;
+      }
+
+      .optimized {
+        background-color: var(--secondary-color);
+        color: white;
+      }
+
+      .pipeline-viz {
+        display: flex;
+        justify-content: space-between;
+        margin: 30px 0;
+        position: relative;
+        height: 100px;
+      }
+
+      .pipeline-stage {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background-color: #e0e0e0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        position: relative;
+        z-index: 2;
+      }
+
+      .pipeline-stage.active {
+        background-color: var(--primary-color);
+        color: white;
+        box-shadow: 0 0 15px rgba(66, 133, 244, 0.5);
+      }
+
+      .pipeline-stage.completed {
+        background-color: var(--secondary-color);
+        color: white;
+      }
+
+      .pipeline-stage.error {
+        background-color: var(--quaternary-color);
+        color: white;
+      }
+
+      .pipeline-connector {
+        height: 4px;
+        background-color: #e0e0e0;
+        position: absolute;
+        top: 50px;
+        z-index: 1;
+      }
+
+      .pipeline-connector.active {
+        background-color: var(--primary-color);
+      }
+
+      .execution-output {
+        min-height: 100px;
+        background-color: black;
+        color: white;
+        border-radius: 8px;
+        padding: 15px;
+        font-family: "Consolas", "Courier New", monospace;
+        margin-top: 20px;
+      }
+
+      .execution-line {
+        margin: 5px 0;
+        opacity: 0;
+        animation: typing 1.5s forwards;
+      }
+
+      .error-message {
+        color: var(--quaternary-color);
+        font-weight: bold;
+      }
+
+      .cursor {
+        display: inline-block;
+        width: 8px;
+        height: 16px;
+        background-color: white;
+        animation: blink 1s infinite;
+        margin-left: 2px;
+      }
+
+      /* Speed controls */
+      .speed-control {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 20px;
+      }
+
+      .speed-label {
+        font-size: 14px;
+      }
+
+      input[type="range"] {
+        width: 200px;
+      }
+
+      /* Animations */
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes slideIn {
+        from {
+          opacity: 0;
+          transform: translateX(-20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateX(0);
+        }
+      }
+
+      @keyframes typing {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0;
+        }
+      }
+
+      /* Legend styles */
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        margin: 15px 0;
+        padding: 10px;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        background-color: white;
+      }
+
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 14px;
+      }
+
+      .legend-color {
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+      }
+
+      /* Progress bar */
+      .progress-container {
+        width: 100%;
+        height: 8px;
+        background-color: #e0e0e0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin: 10px 0;
+      }
+
+      .progress-bar {
+        height: 100%;
+        width: 0%;
+        background-color: var(--primary-color);
+        transition: width 0.3s;
+      }
+
+      .info-box {
+        background-color: #e8f5e9;
+        border-left: 4px solid var(--secondary-color);
+        padding: 10px 15px;
+        margin: 15px 0;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>JavaScript Engine Pipeline</h1>
+
+    <!-- Original Code Display -->
+    <div>
+      <h3>Source Code</h3>
+      <div class="code-container">
+        <pre><code>var greeting = "Hello";
+console.log(greeting);
+greeting = "Hi";</code></pre>
+      </div>
+
+      <!-- Fixed code for demonstrating the full pipeline -->
+      <div class="info-box">
+        Note: We've fixed the syntax error in the original code (<code
+          >greeting = ."Hi";</code
+        >
+        → <code>greeting = "Hi";</code>) so we can demonstrate the complete
+        compilation and execution pipeline.
+      </div>
+    </div>
+
+    <!-- Pipeline Visualization -->
+    <div class="pipeline-viz">
+      <div class="pipeline-stage" id="stage-lexer">Lexer</div>
+      <div class="pipeline-connector" style="left: 100px; width: 150px"></div>
+      <div class="pipeline-stage" id="stage-parser" style="left: 250px">
+        Parser
+      </div>
+      <div class="pipeline-connector" style="left: 350px; width: 150px"></div>
+      <div class="pipeline-stage" id="stage-bytecode" style="left: 500px">
+        Bytecode
+      </div>
+      <div class="pipeline-connector" style="left: 600px; width: 150px"></div>
+      <div class="pipeline-stage" id="stage-interpreter" style="left: 750px">
+        Interpreter
+      </div>
+      <div class="pipeline-connector" style="left: 850px; width: 150px"></div>
+      <div class="pipeline-stage" id="stage-jit" style="left: 1000px">JIT</div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls">
+      <button id="startBtn">Start Animation</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+
+    <div class="speed-control">
+      <span class="speed-label">Animation Speed:</span>
+      <input
+        type="range"
+        id="speedControl"
+        min="0.5"
+        max="2"
+        step="0.25"
+        value="1"
+      />
+      <span id="speedValue">1x</span>
+    </div>
+
+    <!-- Engine Container -->
+    <div class="engine-container">
+      <!-- 1. Lexical Analysis (Tokenization) -->
+      <div class="stage" id="lexer-stage">
+        <div class="stage-header">
+          <h3 class="stage-title">1. Lexical Analysis (Tokenization)</h3>
+          <div class="stage-status status-waiting" id="lexer-status">
+            Waiting
+          </div>
+        </div>
+        <p>
+          The lexer breaks down source code into tokens, which are meaningful
+          units like keywords, identifiers, and operators.
+        </p>
+        <div class="token-container" id="tokenContainer"></div>
+        <div class="progress-container">
+          <div class="progress-bar" id="lexer-progress"></div>
+        </div>
+      </div>
+
+      <!-- 2. Parsing (AST) -->
+      <div class="stage" id="parser-stage">
+        <div class="stage-header">
+          <h3 class="stage-title">2. Syntax Analysis (Abstract Syntax Tree)</h3>
+          <div class="stage-status status-waiting" id="parser-status">
+            Waiting
+          </div>
+        </div>
+        <p>
+          The parser organizes tokens into a structured tree representation of
+          the code's syntax.
+        </p>
+        <div class="ast-container" id="astContainer"></div>
+        <div class="progress-container">
+          <div class="progress-bar" id="parser-progress"></div>
+        </div>
+      </div>
+
+      <!-- 3. Bytecode Generation -->
+      <div class="stage" id="bytecode-stage">
+        <div class="stage-header">
+          <h3 class="stage-title">3. Bytecode Generation</h3>
+          <div class="stage-status status-waiting" id="bytecode-status">
+            Waiting
+          </div>
+        </div>
+        <p>
+          The AST is transformed into bytecode, an intermediate representation
+          that's more efficient than the AST but not as optimized as machine
+          code.
+        </p>
+        <div class="bytecode-container" id="bytecodeContainer"></div>
+        <div class="progress-container">
+          <div class="progress-bar" id="bytecode-progress"></div>
+        </div>
+      </div>
+
+      <!-- 4. Interpreter Execution -->
+      <div class="stage" id="interpreter-stage">
+        <div class="stage-header">
+          <h3 class="stage-title">4. Interpreter Execution</h3>
+          <div class="stage-status status-waiting" id="interpreter-status">
+            Waiting
+          </div>
+        </div>
+        <p>The interpreter executes the bytecode instructions one by one.</p>
+        <div class="execution-output" id="interpreterOutput">
+          <div class="cursor"></div>
+        </div>
+        <div class="progress-container">
+          <div class="progress-bar" id="interpreter-progress"></div>
+        </div>
+      </div>
+
+      <!-- 5. JIT Compilation -->
+      <div class="stage" id="jit-stage">
+        <div class="stage-header">
+          <h3 class="stage-title">5. JIT Compilation</h3>
+          <div class="stage-status status-waiting" id="jit-status">Waiting</div>
+        </div>
+        <p>
+          The JIT compiler identifies "hot" code paths and compiles them to
+          optimized machine code for faster execution.
+        </p>
+        <div class="machine-code-container" id="machineCodeContainer"></div>
+        <div class="progress-container">
+          <div class="progress-bar" id="jit-progress"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // DOM elements
+      const startBtn = document.getElementById("startBtn");
+      const resetBtn = document.getElementById("resetBtn");
+      const speedControl = document.getElementById("speedControl");
+      const speedValue = document.getElementById("speedValue");
+
+      // Pipeline stage elements
+      const stageLexer = document.getElementById("stage-lexer");
+      const stageParser = document.getElementById("stage-parser");
+      const stageBytecode = document.getElementById("stage-bytecode");
+      const stageInterpreter = document.getElementById("stage-interpreter");
+      const stageJit = document.getElementById("stage-jit");
+
+      // Container elements
+      const lexerStage = document.getElementById("lexer-stage");
+      const parserStage = document.getElementById("parser-stage");
+      const bytecodeStage = document.getElementById("bytecode-stage");
+      const interpreterStage = document.getElementById("interpreter-stage");
+      const jitStage = document.getElementById("jit-stage");
+
+      // Status elements
+      const lexerStatus = document.getElementById("lexer-status");
+      const parserStatus = document.getElementById("parser-status");
+      const bytecodeStatus = document.getElementById("bytecode-status");
+      const interpreterStatus = document.getElementById("interpreter-status");
+      const jitStatus = document.getElementById("jit-status");
+
+      // Progress bars
+      const lexerProgress = document.getElementById("lexer-progress");
+      const parserProgress = document.getElementById("parser-progress");
+      const bytecodeProgress = document.getElementById("bytecode-progress");
+      const interpreterProgress = document.getElementById(
+        "interpreter-progress"
+      );
+      const jitProgress = document.getElementById("jit-progress");
+
+      // Output containers
+      const tokenContainer = document.getElementById("tokenContainer");
+      const astContainer = document.getElementById("astContainer");
+      const bytecodeContainer = document.getElementById("bytecodeContainer");
+      const interpreterOutput = document.getElementById("interpreterOutput");
+      const machineCodeContainer = document.getElementById(
+        "machineCodeContainer"
+      );
+
+      // Pipeline connectors
+      const pipelineConnectors = document.querySelectorAll(
+        ".pipeline-connector"
+      );
+
+      // Animation speed
+      let speedFactor = 1;
+
+      // Tokens for the example code
+      const tokens = [
+        { type: "keyword", value: "var" },
+        { type: "identifier", value: "greeting" },
+        { type: "operator", value: "=" },
+        { type: "string", value: '"Hello"' },
+        { type: "punctuation", value: ";" },
+        { type: "identifier", value: "console" },
+        { type: "punctuation", value: "." },
+        { type: "identifier", value: "log" },
+        { type: "punctuation", value: "(" },
+        { type: "identifier", value: "greeting" },
+        { type: "punctuation", value: ")" },
+        { type: "punctuation", value: ";" },
+        { type: "identifier", value: "greeting" },
+        { type: "operator", value: "=" },
+        { type: "string", value: '"Hi"' },
+        { type: "punctuation", value: ";" },
+      ];
+
+      // Bytecode instructions for the example code
+      const bytecodeInstructions = [
+        'LdaConstant [0]           // Load "Hello" constant',
+        'StaGlobal [1]             // Store to global var "greeting"',
+        'LdaGlobal [2]             // Load "console" object',
+        "CallProperty1 [3], [4]    // Call console.log with greeting",
+        'LdaConstant [5]           // Load "Hi" constant',
+        'StaGlobal [1]             // Update global var "greeting"',
+      ];
+
+      // JIT compiled code
+      const machineCodeInstructions = [
+        'mov rax, QWORD PTR [rip+0x1234]    // Load "Hello" string address',
+        'mov QWORD PTR [rip+0x5678], rax    // Store to "greeting" memory location',
+        'mov rdi, QWORD PTR [rip+0x9abc]    // Load "console" object address',
+        'mov rsi, QWORD PTR [rip+0x5678]    // Load "greeting" value as first arg',
+        "call 0x7fff12345678                // Call console.log function",
+        'mov rax, QWORD PTR [rip+0xdef0]    // Load "Hi" string address',
+        'mov QWORD PTR [rip+0x5678], rax    // Update "greeting" memory location',
+      ];
+
+      // Set animation speed
+      speedControl.addEventListener("input", function () {
+        speedFactor = parseFloat(this.value);
+        speedValue.textContent = speedFactor + "x";
+      });
+
+      // Start the animation
+      startBtn.addEventListener("click", function () {
+        startBtn.disabled = true;
+        startAnimation();
+      });
+
+      // Reset the animation
+      resetBtn.addEventListener("click", function () {
+        location.reload();
+      });
+
+      // Main animation sequence
+      function startAnimation() {
+        // 1. Run the lexer
+        runLexerAnimation()
+          .then(() => {
+            // 2. Run the parser
+            return runParserAnimation();
+          })
+          .then(() => {
+            // 3. Generate bytecode
+            return runBytecodeAnimation();
+          })
+          .then(() => {
+            // 4. Run the interpreter
+            return runInterpreterAnimation();
+          })
+          .then(() => {
+            // 5. JIT compilation
+            return runJITAnimation();
+          })
+          .then(() => {
+            resetBtn.textContent = "Restart Animation";
+          });
+      }
+
+      // Helper function to wait with speed factor
+      function wait(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms / speedFactor));
+      }
+
+      // Lexer animation
+      function runLexerAnimation() {
+        return new Promise(async (resolve) => {
+          // Update UI
+          stageLexer.classList.add("active");
+          lexerStage.classList.add("active");
+          lexerStatus.textContent = "In Progress";
+          lexerStatus.className = "stage-status status-in-progress";
+
+          // Process each token
+          for (let i = 0; i < tokens.length; i++) {
+            // Update progress
+            lexerProgress.style.width = `${(i / tokens.length) * 100}%`;
+
+            // Create token element
+            const tokenElem = document.createElement("div");
+            tokenElem.textContent = tokens[i].value;
+            tokenElem.className = `token ${tokens[i].type}`;
+            tokenContainer.appendChild(tokenElem);
+
+            await wait(300);
+          }
+
+          // Complete the lexer stage
+          await wait(500);
+          lexerProgress.style.width = "100%";
+          lexerStatus.textContent = "Completed";
+          lexerStatus.className = "stage-status status-completed";
+          lexerStage.classList.remove("active");
+          lexerStage.classList.add("completed");
+          stageLexer.classList.remove("active");
+          stageLexer.classList.add("completed");
+          pipelineConnectors[0].classList.add("active");
+
+          resolve();
+        });
+      }
+
+      // Parser animation
+      function runParserAnimation() {
+        return new Promise(async (resolve) => {
+          // Update UI
+          stageParser.classList.add("active");
+          parserStage.classList.add("active");
+          parserStatus.textContent = "In Progress";
+          parserStatus.className = "stage-status status-in-progress";
+
+          // Create the AST
+          // First line - var declaration
+          createNode("Program", 400, 30, 120, 40, 0);
+          await wait(500);
+          parserProgress.style.width = "10%";
+
+          createNode("VariableDeclaration", 200, 100, 180, 40, 1);
+          createEdge(400, 50, 290, 100, 2);
+          await wait(500);
+          parserProgress.style.width = "20%";
+
+          createNode("Identifier: greeting", 100, 170, 180, 40, 3);
+          createEdge(290, 140, 190, 170, 4);
+          await wait(400);
+          parserProgress.style.width = "30%";
+
+          createNode('Literal: "Hello"', 300, 170, 180, 40, 5);
+          createEdge(290, 140, 390, 170, 6);
+          await wait(400);
+          parserProgress.style.width = "40%";
+
+          // Second line - console.log call
+          createNode("ExpressionStatement", 600, 100, 180, 40, 7);
+          createEdge(460, 50, 690, 100, 8);
+          await wait(400);
+          parserProgress.style.width = "50%";
+
+          createNode("CallExpression", 600, 170, 180, 40, 9);
+          createEdge(690, 140, 690, 170, 10);
+          await wait(400);
+          parserProgress.style.width = "60%";
+
+          createNode("MemberExpression", 500, 240, 180, 40, 11);
+          createEdge(690, 210, 590, 240, 12);
+          await wait(300);
+          parserProgress.style.width = "70%";
+
+          createNode("Identifier: console", 400, 310, 180, 40, 13);
+          createEdge(590, 280, 490, 310, 14);
+          await wait(300);
+
+          createNode("Identifier: log", 600, 310, 180, 40, 15);
+          createEdge(590, 280, 690, 310, 16);
+          await wait(300);
+          parserProgress.style.width = "80%";
+
+          createNode("Identifier: greeting", 700, 240, 180, 40, 17);
+          createEdge(690, 210, 790, 240, 18);
+          await wait(300);
+          parserProgress.style.width = "90%";
+
+          // Third line - assignment
+          createNode("AssignmentExpression", 400, 100, 180, 40, 19);
+          createEdge(460, 50, 490, 100, 20);
+          await wait(300);
+
+          createNode("Identifier: greeting", 350, 170, 180, 40, 21);
+          createEdge(490, 140, 440, 170, 22);
+          await wait(300);
+
+          createNode('Literal: "Hi"', 450, 170, 180, 40, 23);
+          createEdge(490, 140, 540, 170, 24);
+          await wait(400);
+          parserProgress.style.width = "100%";
+
+          // Complete the parser stage
+          await wait(500);
+          parserStatus.textContent = "Completed";
+          parserStatus.className = "stage-status status-completed";
+          parserStage.classList.remove("active");
+          parserStage.classList.add("completed");
+          stageParser.classList.remove("active");
+          stageParser.classList.add("completed");
+          pipelineConnectors[1].classList.add("active");
+
+          resolve();
+        });
+      }
+
+      // Bytecode generation animation
+      function runBytecodeAnimation() {
+        return new Promise(async (resolve) => {
+          // Update UI
+          stageBytecode.classList.add("active");
+          bytecodeStage.classList.add("active");
+          bytecodeStatus.textContent = "In Progress";
+          bytecodeStatus.className = "stage-status status-in-progress";
+
+          // Generate bytecode instructions
+          for (let i = 0; i < bytecodeInstructions.length; i++) {
+            // Update progress
+            bytecodeProgress.style.width = `${
+              ((i + 1) / bytecodeInstructions.length) * 100
+            }%`;
+
+            // Create bytecode line
+            const lineElem = document.createElement("div");
+            lineElem.textContent = bytecodeInstructions[i];
+            lineElem.className = "bytecode-line";
+            bytecodeContainer.appendChild(lineElem);
+
+            // Show the line with animation
+            await wait(100);
+            lineElem.style.opacity = "1";
+
+            await wait(500);
+          }
+
+          // Complete the bytecode stage
+          await wait(500);
+          bytecodeStatus.textContent = "Completed";
+          bytecodeStatus.className = "stage-status status-completed";
+          bytecodeStage.classList.remove("active");
+          bytecodeStage.classList.add("completed");
+          stageBytecode.classList.remove("active");
+          stageBytecode.classList.add("completed");
+          pipelineConnectors[2].classList.add("active");
+
+          resolve();
+        });
+      }
+
+      // Interpreter execution animation
+      function runInterpreterAnimation() {
+        return new Promise(async (resolve) => {
+          // Update UI
+          stageInterpreter.classList.add("active");
+          interpreterStage.classList.add("active");
+          interpreterStatus.textContent = "In Progress";
+          interpreterStatus.className = "stage-status status-in-progress";
+
+          // Clear the initial cursor
+          interpreterOutput.innerHTML = "";
+
+          // Update progress bar as we execute each line
+          interpreterProgress.style.width = "20%";
+
+          // Show var declaration execution
+          const line1 = document.createElement("div");
+          line1.textContent = '> var greeting = "Hello"';
+          line1.className = "execution-line";
+          interpreterOutput.appendChild(line1);
+          await wait(1000);
+          line1.style.opacity = "1";
+          interpreterProgress.style.width = "40%";
+
+          // Show console.log execution
+          const line2 = document.createElement("div");
+          line2.textContent = "> console.log(greeting)";
+          line2.className = "execution-line";
+          interpreterOutput.appendChild(line2);
+          await wait(800);
+          line2.style.opacity = "1";
+
+          const line3 = document.createElement("div");
+          line3.textContent = "Hello";
+          line3.className = "execution-line";
+          line3.style.color = "#98c379";
+          interpreterOutput.appendChild(line3);
+          await wait(800);
+          line3.style.opacity = "1";
+          interpreterProgress.style.width = "70%";
+
+          // Show second variable assignment
+          const line4 = document.createElement("div");
+          line4.textContent = '> greeting = "Hi"';
+          line4.className = "execution-line";
+          interpreterOutput.appendChild(line4);
+          await wait(1000);
+          line4.style.opacity = "1";
+          interpreterProgress.style.width = "100%";
+
+          // Add cursor at the end
+          const cursor = document.createElement("span");
+          cursor.className = "cursor";
+          interpreterOutput.appendChild(cursor);
+
+          // Complete the interpreter stage
+          await wait(500);
+          interpreterStatus.textContent = "Completed";
+          interpreterStatus.className = "stage-status status-completed";
+          interpreterStage.classList.remove("active");
+          interpreterStage.classList.add("completed");
+          stageInterpreter.classList.remove("active");
+          stageInterpreter.classList.add("completed");
+          pipelineConnectors[3].classList.add("active");
+
+          resolve();
+        });
+      }
+
+      // JIT compilation animation
+      function runJITAnimation() {
+        return new Promise(async (resolve) => {
+          // Update UI
+          stageJit.classList.add("active");
+          jitStage.classList.add("active");
+          jitStatus.textContent = "In Progress";
+          jitStatus.className = "stage-status status-in-progress";
+
+          // Add info about profiling
+          const profilingInfo = document.createElement("div");
+          profilingInfo.textContent = "JIT compiler is profiling execution...";
+          profilingInfo.style.margin = "10px 0";
+          profilingInfo.style.fontStyle = "italic";
+          machineCodeContainer.appendChild(profilingInfo);
+
+          await wait(1000);
+          jitProgress.style.width = "20%";
+
+          // Update info
+          profilingInfo.textContent =
+            "Hot path detected: main execution sequence";
+          await wait(800);
+          jitProgress.style.width = "30%";
+
+          // Add optimization info
+          const optimizationInfo = document.createElement("div");
+          optimizationInfo.textContent =
+            "Applying optimizations and generating machine code...";
+          optimizationInfo.style.margin = "10px 0";
+          optimizationInfo.style.fontStyle = "italic";
+          machineCodeContainer.appendChild(optimizationInfo);
+
+          await wait(800);
+          jitProgress.style.width = "50%";
+
+          // Generate optimized machine code
+          for (let i = 0; i < machineCodeInstructions.length; i++) {
+            const lineElem = document.createElement("div");
+            lineElem.textContent = machineCodeInstructions[i];
+            lineElem.className = "machine-code-line";
+            machineCodeContainer.appendChild(lineElem);
+
+            await wait(100);
+            lineElem.style.opacity = "1";
+
+            // Highlight optimized instructions
+            if (i === 3 || i === 4) {
+              await wait(200);
+              lineElem.classList.add("optimized");
+            }
+
+            jitProgress.style.width = `${
+              50 + ((i + 1) / machineCodeInstructions.length) * 50
+            }%`;
+            await wait(300);
+          }
+
+          // Complete the JIT stage
+          await wait(500);
+          jitStatus.textContent = "Completed";
+          jitStatus.className = "stage-status status-completed";
+          jitStage.classList.remove("active");
+          jitStage.classList.add("completed");
+          stageJit.classList.remove("active");
+          stageJit.classList.add("completed");
+
+          resolve();
+        });
+      }
+
+      // Helper function to create an AST node
+      function createNode(text, left, top, width, height, index) {
+        const node = document.createElement("div");
+        node.className = "node";
+        node.textContent = text;
+        node.style.left = left + "px";
+        node.style.top = top + "px";
+        node.style.width = width + "px";
+        node.style.height = height + "px";
+        node.style.zIndex = 100 - index; // Higher nodes appear on top
+        astContainer.appendChild(node);
+
+        // Fade in the node
+        setTimeout(() => {
+          node.style.opacity = 1;
+        }, 10);
+      }
+
+      // Helper function to create an edge between nodes
+      function createEdge(x1, y1, x2, y2, index) {
+        const length = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        const angle = (Math.atan2(y2 - y1, x2 - x1) * 180) / Math.PI;
+
+        const edge = document.createElement("div");
+        edge.className = "edge";
+        edge.style.width = length + "px";
+        edge.style.left = x1 + "px";
+        edge.style.top = y1 + "px";
+        edge.style.transform = `rotate(${angle}deg)`;
+        edge.style.zIndex = 50 - index; // Lower than nodes
+        astContainer.appendChild(edge);
+
+        // Fade in the edge
+        setTimeout(() => {
+          edge.style.opacity = 1;
+        }, 10);
+      }
+    </script>
+  </body>
+</html>
